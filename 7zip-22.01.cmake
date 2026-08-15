@@ -1,12 +1,5 @@
 cmake_minimum_required( VERSION 3.14 )
 
-set(
-    BIT7Z_7ZIP_VERSION
-    "22.01"
-    CACHE STRING
-    "The version of 7-zip to be used by bit7z"
-)
-
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
