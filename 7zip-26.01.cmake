@@ -8,6 +8,12 @@ set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 set(7ZIP_COMPILE_DEFINITIONS Z7_EXTERNAL_CODECS)
 
+include_directories(
+	${7ZIP_SOURCE_DIR}
+	${7ZIP_SOURCE_DIR}/CPP
+	${7ZIP_SOURCE_DIR}/C
+)
+
 set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/CPP/Common/CRC.cpp
 	${7ZIP_SOURCE_DIR}/CPP/Common/CrcReg.cpp
@@ -42,6 +48,7 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/CPP/Windows/PropVariant.cpp
 	${7ZIP_SOURCE_DIR}/CPP/Windows/PropVariantConv.cpp
 	${7ZIP_SOURCE_DIR}/CPP/Windows/PropVariantUtils.cpp
+	${7ZIP_SOURCE_DIR}/CPP/Windows/Synchronization.cpp
 	${7ZIP_SOURCE_DIR}/CPP/Windows/System.cpp
 	${7ZIP_SOURCE_DIR}/CPP/Windows/TimeUtils.cpp
 
@@ -362,21 +369,15 @@ target_include_directories(
 		${7ZIP_SOURCE_DIR}/CPP
 		${7ZIP_SOURCE_DIR}/C
 )
-add_library(7-zip INTERFACE)
-
-target_sources(
-	7-zip
-	INTERFACE
-		$<TARGET_OBJECTS:7zip>
-)
-
-target_include_directories(
-	7-zip
-	INTERFACE
-		${7ZIP_SOURCE_DIR}/CPP
-		${7ZIP_SOURCE_DIR}/C
-)
 target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
+
+if( UNIX )
+	target_compile_definitions(
+		7zip
+		PRIVATE
+			_LARGEFILE64_SOURCE _LARGEFILE_SOURCE _REENTRANT EXTERNAL_CODECS ENV_UNIX BREAK_HANDLER USE_WIN_FILE
+	)
+endif()
 
 if(NOT MSVC)
 	target_compile_options(
