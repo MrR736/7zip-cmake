@@ -362,6 +362,18 @@ target_include_directories(
 		${7ZIP_SOURCE_DIR}/CPP
 		${7ZIP_SOURCE_DIR}/C
 )
+add_library(7zipI INTERFACE)
+target_sources(
+    7zipI
+    INTERFACE
+        $<TARGET_OBJECTS:7zip>
+)
+target_include_directories(
+    7zipI
+    INTERFACE
+        ${7ZIP_SOURCE_DIR}/CPP
+        ${7ZIP_SOURCE_DIR}/C
+)
 target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
 
 if(NOT MSVC)
