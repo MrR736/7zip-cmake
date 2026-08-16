@@ -1,7 +1,7 @@
 cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
-option(7ZIP_USE_ASM "Use ASM in 7-Zip" ON)
+option(7ZIP_USE_ASM "Use ASM in 7-Zip" OFF)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
