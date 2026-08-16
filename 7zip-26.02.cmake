@@ -2,7 +2,7 @@ cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
 
-set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 set(7ZIP_COMPILE_DEFINITIONS Z7_EXTERNAL_CODECS)
 
@@ -336,3 +336,57 @@ target_include_directories(
         ${7ZIP_SOURCE_DIR}/C
 )
 target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
+
+if(NOT MSVC)
+    target_compile_options(
+        7zip
+        PRIVATE
+            -Wall
+            -Wextra
+            -D_REENTRANT
+            -D_FILE_OFFSET_BITS=64
+            -D_LARGEFILE_SOURCE
+    )
+
+    set_target_properties(
+        7zip
+        PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+    )
+
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    target_compile_options(
+        7zip
+        PRIVATE
+            -g
+    )
+else()
+    target_compile_definitions(
+        7zip
+        PRIVATE
+            NDEBUG
+    )
+endif()
+
+if(NOT MSVC)
+    target_compile_options(
+        7zip
+        PRIVATE
+            $<$<CONFIG:Release>:-O2>
+            $<$<CONFIG:RelWithDebInfo>:-O2>
+            $<$<CONFIG:MinSizeRel>:-O2>
+    )
+endif()
+
+if(NOT WIN32)
+    find_package(Threads REQUIRED)
+    target_link_libraries(
+        7zip
+        PRIVATE
+            Threads::Threads
+            ${CMAKE_DL_LIBS}
+    )
+endif()
+
