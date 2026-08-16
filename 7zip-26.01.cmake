@@ -1,7 +1,8 @@
 cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
-option(7ZIP_USE_ASM "Use ASM in 7-Zip" OFF)
+option(7ZIP_USE_ASM "Use ASM in 7-Zip" ON)
+option(7ZIP_USE_EXPORTS "Use ArchiveExports.cpp/DllExports2.cpp in 7-Zip" OFF)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
@@ -61,7 +62,6 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Common/StreamUtils.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Common/UniqBlocks.cpp
 
-	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArchiveExports.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ApfsHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ApmHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArHandler.cpp
@@ -72,7 +72,6 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/CpioHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/CramfsHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DeflateProps.cpp
-	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DllExports2.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DmgHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ElfHandler.cpp
 	${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ExtHandler.cpp
@@ -279,8 +278,6 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/XzCrc64Opt.c
 	${7ZIP_SOURCE_DIR}/C/Aes.c
 	${7ZIP_SOURCE_DIR}/C/AesOpt.c
-	${7ZIP_SOURCE_DIR}/C/Sha256.c
-	${7ZIP_SOURCE_DIR}/C/Sha256Opt.c
 	${7ZIP_SOURCE_DIR}/C/Sha1.c
 	${7ZIP_SOURCE_DIR}/C/Sha1Opt.c
 	${7ZIP_SOURCE_DIR}/C/Sha256.c
@@ -290,6 +287,13 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/Sha512Opt.c
 	${7ZIP_SOURCE_DIR}/C/ZstdDec.c
 )
+
+if(7ZIP_USE_EXPORTS)
+	list(APPEND 7ZIP_SOURCES
+		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArchiveExports.cpp
+		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DllExports2.cpp
+	)
+endif()
 
 if(7ZIP_USE_ASM)
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
@@ -400,15 +404,5 @@ if(NOT MSVC)
 			$<$<CONFIG:Release>:-O2>
 			$<$<CONFIG:RelWithDebInfo>:-O2>
 			$<$<CONFIG:MinSizeRel>:-O2>
-	)
-endif()
-
-if(NOT WIN32)
-	find_package(Threads REQUIRED)
-	target_link_libraries(
-		7zip
-		PRIVATE
-			Threads::Threads
-			${CMAKE_DL_LIBS}
 	)
 endif()
