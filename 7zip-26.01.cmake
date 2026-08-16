@@ -1,6 +1,7 @@
 cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
+option(7ZIP_USE_ASM "Use ASM in 7-Zip" ON)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
@@ -290,6 +291,28 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/ZstdDec.c
 )
 
+if(7ZIP_USE_ASM)
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+		find_program(7ZIP_NASM_EXECUTABLE nasm)
+		if(7ZIP_NASM_EXECUTABLE)
+			enable_language(ASM_NASM)
+			list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm)
+			list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
+			message(STATUS "7-Zip ASM enabled: ${7ZIP_NASM_EXECUTABLE}")
+		else()
+			message(
+				WARNING
+				"7ZIP_USE_ASM=ON but NASM was not found. "
+				"Building 7-Zip without x86 ASM."
+			)
+		endif()
+	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S)
+		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
+		message(STATUS "7-Zip ARM64 ASM enabled")
+	endif()
+endif()
+
 if(MINGW)
 	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_ST)
 	list(APPEND 7ZIP_SOURCES
@@ -330,62 +353,62 @@ endif()
 
 add_library(7zip OBJECT ${7ZIP_SOURCES})
 target_include_directories(
-    7zip
-    PRIVATE
-        ${7ZIP_SOURCE_DIR}/CPP
-        ${7ZIP_SOURCE_DIR}/C
+	7zip
+	PRIVATE
+		${7ZIP_SOURCE_DIR}/CPP
+		${7ZIP_SOURCE_DIR}/C
 )
 target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
 
 if(NOT MSVC)
-    target_compile_options(
-        7zip
-        PRIVATE
-            -Wall
-            -Wextra
-            -D_REENTRANT
-            -D_FILE_OFFSET_BITS=64
-            -D_LARGEFILE_SOURCE
-    )
+	target_compile_options(
+		7zip
+		PRIVATE
+			-Wall
+			-Wextra
+			-D_REENTRANT
+			-D_FILE_OFFSET_BITS=64
+			-D_LARGEFILE_SOURCE
+	)
 
-    set_target_properties(
-        7zip
-        PROPERTIES
-            POSITION_INDEPENDENT_CODE ON
-    )
+	set_target_properties(
+		7zip
+		PROPERTIES
+			POSITION_INDEPENDENT_CODE ON
+	)
 
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-    target_compile_options(
-        7zip
-        PRIVATE
-            -g
-    )
+	target_compile_options(
+		7zip
+		PRIVATE
+			-g
+	)
 else()
-    target_compile_definitions(
-        7zip
-        PRIVATE
-            NDEBUG
-    )
+	target_compile_definitions(
+		7zip
+		PRIVATE
+			NDEBUG
+	)
 endif()
 
 if(NOT MSVC)
-    target_compile_options(
-        7zip
-        PRIVATE
-            $<$<CONFIG:Release>:-O2>
-            $<$<CONFIG:RelWithDebInfo>:-O2>
-            $<$<CONFIG:MinSizeRel>:-O2>
-    )
+	target_compile_options(
+		7zip
+		PRIVATE
+			$<$<CONFIG:Release>:-O2>
+			$<$<CONFIG:RelWithDebInfo>:-O2>
+			$<$<CONFIG:MinSizeRel>:-O2>
+	)
 endif()
 
 if(NOT WIN32)
-    find_package(Threads REQUIRED)
-    target_link_libraries(
-        7zip
-        PRIVATE
-            Threads::Threads
-            ${CMAKE_DL_LIBS}
-    )
+	find_package(Threads REQUIRED)
+	target_link_libraries(
+		7zip
+		PRIVATE
+			Threads::Threads
+			${CMAKE_DL_LIBS}
+	)
 endif()

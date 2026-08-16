@@ -1,6 +1,7 @@
 cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
+option(7ZIP_USE_ASM "Use ASM in 7-Zip" ON)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
@@ -273,6 +274,28 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/Sha1.c
 	${7ZIP_SOURCE_DIR}/C/Sha1Opt.c
 )
+
+if(7ZIP_USE_ASM)
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+		find_program(7ZIP_NASM_EXECUTABLE nasm)
+		if(7ZIP_NASM_EXECUTABLE)
+			enable_language(ASM_NASM)
+			list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm)
+			list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
+			message(STATUS "7-Zip ASM enabled: ${7ZIP_NASM_EXECUTABLE}")
+		else()
+			message(
+				WARNING
+				"7ZIP_USE_ASM=ON but NASM was not found. "
+				"Building 7-Zip without x86 ASM."
+			)
+		endif()
+	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S)
+		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
+		message(STATUS "7-Zip ARM64 ASM enabled")
+	endif()
+endif()
 
 if(MINGW)
 	list(APPEND 7ZIP_COMPILE_DEFINITIONS _7ZIP_ST _7ZIP_LARGE_PAGES)
