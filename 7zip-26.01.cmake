@@ -307,67 +307,6 @@ if(7ZIP_USE_EXPORTS2)
 	)
 endif()
 
-set(7ZIP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/7zip.dir")
-set(7ZIP_ASM_X86_DIRECTORY "${7ZIP_DIRECTORY}/_deps/7zip-src/Asm/x86")
-set(7ZIP_ASM_X86_OUTPUT "${7ZIP_ASM_X86_DIRECTORY}/LzmaDecOpt.asm.o")
-
-if(7ZIP_USE_ASMC)
-	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
-		find_program(7ZIP_ASMC_EXECUTABLE asmc)
-
-		if(NOT 7ZIP_ASMC_EXECUTABLE)
-			message(FATAL_ERROR "7ZIP_USE_ASMC=ON but ASMC was not found")
-		endif()
-
-		message(STATUS "7-Zip ASMC: ${7ZIP_ASMC_EXECUTABLE}")
-
-		# Do NOT use enable_language(ASM_ASMC) here.
-		# ASMC is not a standard CMake assembler language.
-
-		set(7ZIP_ASM_AFLAGS -nologo)
-
-		if(MINGW)
-			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-				list(APPEND 7ZIP_ASM_AFLAGS -win64)
-			else()
-				list(APPEND 7ZIP_ASM_AFLAGS -coff -DABI_CDECL)
-			endif()
-		else()
-			list(APPEND 7ZIP_ASM_AFLAGS -DABI_LINUX)
-			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-				list(APPEND 7ZIP_ASM_AFLAGS -elf64)
-			else()
-				list(APPEND 7ZIP_ASM_AFLAGS -elf -DABI_CDECL)
-			endif()
-		endif()
-
-		set(7ZIP_ASM_SOURCE ${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm)
-
-		add_custom_command(
-			OUTPUT ${7ZIP_ASM_X86_OUTPUT}
-			COMMAND ${CMAKE_COMMAND} -E make_directory ${7ZIP_ASM_X86_DIRECTORY}
-
-			COMMAND ${7ZIP_ASMC_EXECUTABLE} ${7ZIP_ASM_AFLAGS}
-					-Fo${7ZIP_ASM_X86_OUTPUT}
-					${7ZIP_ASM_SOURCE}
-
-			DEPENDS ${7ZIP_ASM_SOURCE}
-
-			VERBATIM
-			COMMENT "Assembling ${7ZIP_ASM_SOURCE} with ASMC"
-		)
-
-		add_custom_target(
-			7zip-asm
-			DEPENDS ${7ZIP_ASM_X86_OUTPUT}
-		)
-
-		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
-	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
-		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S)
-		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
-	endif()
-endif()
 
 if(7ZIP_SET_PROPERTIES)
 	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7Z_SET_PROPERTIES)
@@ -423,15 +362,117 @@ if( UNIX )
 	)
 endif()
 
+set(7ZIP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/7zip.dir")
+set(7ZIP_ASM_X86_DIRECTORY "${7ZIP_DIRECTORY}/_deps/7zip-src/Asm/x86")
+set(7ZIP_ASM_X86_OUTPUT "${7ZIP_ASM_X86_DIRECTORY}/LzmaDecOpt.asm.o")
+
+if(7ZIP_USE_ASMC)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+
+        find_program(7ZIP_ASMC_EXECUTABLE asmc)
+
+        if(NOT 7ZIP_ASMC_EXECUTABLE)
+            message(FATAL_ERROR
+                "7ZIP_USE_ASMC=ON but ASMC was not found"
+            )
+        endif()
+
+        message(STATUS
+            "7-Zip ASMC: ${7ZIP_ASMC_EXECUTABLE}"
+        )
+
+        set(7ZIP_ASM_AFLAGS -nologo)
+
+        if(MINGW)
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES
+               "^(x86_64|AMD64|amd64)$")
+                list(APPEND 7ZIP_ASM_AFLAGS -win64)
+            else()
+                list(APPEND 7ZIP_ASM_AFLAGS
+                    -coff
+                    -DABI_CDECL
+                )
+            endif()
+        else()
+            list(APPEND 7ZIP_ASM_AFLAGS -DABI_LINUX)
+
+            if(CMAKE_SYSTEM_PROCESSOR MATCHES
+               "^(x86_64|AMD64|amd64)$")
+                list(APPEND 7ZIP_ASM_AFLAGS -elf64)
+            else()
+                list(APPEND 7ZIP_ASM_AFLAGS
+                    -elf
+                    -DABI_CDECL
+                )
+            endif()
+        endif()
+
+        set(7ZIP_ASM_SOURCE
+            "${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm"
+        )
+
+        add_custom_command(
+            OUTPUT
+                "${7ZIP_ASM_X86_OUTPUT}"
+
+            COMMAND
+                ${CMAKE_COMMAND} -E make_directory
+                "${7ZIP_ASM_X86_DIRECTORY}"
+
+            COMMAND
+                "${7ZIP_ASMC_EXECUTABLE}"
+                ${7ZIP_ASM_AFLAGS}
+                "-Fo${7ZIP_ASM_X86_OUTPUT}"
+                "${7ZIP_ASM_SOURCE}"
+
+            DEPENDS
+                "${7ZIP_ASM_SOURCE}"
+
+            VERBATIM
+
+            COMMENT
+                "Assembling ${7ZIP_ASM_SOURCE} with ASMC"
+        )
+
+        # A target representing the generated .o file.
+        add_library(7zip-asm OBJECT IMPORTED GLOBAL)
+
+        set_property(TARGET 7zip-asm
+            PROPERTY IMPORTED_OBJECTS
+                "${7ZIP_ASM_X86_OUTPUT}"
+        )
+
+        # Make sure the generated object exists before it is consumed.
+        add_custom_target(7zip-asm-build
+            DEPENDS "${7ZIP_ASM_X86_OUTPUT}"
+        )
+
+        add_dependencies(7zip-asm 7zip-asm-build)
+
+        list(APPEND 7ZIP_COMPILE_DEFINITIONS
+            Z7_7ZIP_ASM
+        )
+
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
+
+        list(APPEND 7ZIP_SOURCES
+            "${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S"
+        )
+
+        list(APPEND 7ZIP_COMPILE_DEFINITIONS
+            Z7_7ZIP_ASM
+        )
+
+    endif()
+endif()
+
 add_library(7zip OBJECT ${7ZIP_SOURCES})
 if(7ZIP_USE_ASMC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
-	target_sources(
-		7zip
-		PRIVATE
-			${7ZIP_ASM_X86_OUTPUT}
-	)
+    target_sources(7zip PRIVATE
+        "${7ZIP_ASM_X86_OUTPUT}"
+    )
 
-	add_dependencies(7zip 7zip-asm)
+    add_dependencies(7zip 7zip-asm-build)
 endif()
 
 target_include_directories(
