@@ -1,12 +1,17 @@
 cmake_minimum_required( VERSION 3.14 )
 
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
-option(7ZIP_USE_ASM "Use ASM in 7-Zip" OFF)
-option(7ZIP_USE_EXPORTS "Use ArchiveExports.cpp/DllExports2.cpp in 7-Zip" OFF)
+option(7ZIP_USE_ASMC "Use ASMC in 7-Zip" ON)
+
+option(7ZIP_DISABLE_UBSAN "Disable UndefinedBehaviorSanitizer for 7-Zip" ON)
+option(7ZIP_DISABLE_ASAN "Enable AddressSanitizer for 7-Zip" ON)
+
+option(7ZIP_SET_PROPERTIES "Enable SetProperties for 7-Zip" ON)
+option(7ZIP_USE_EXPORTS2 "Use ArchiveExports.cpp/DllExports2.cpp in 7-Zip" ON)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
-set(7ZIP_COMPILE_DEFINITIONS Z7_EXTERNAL_CODECS)
+set(7ZIP_COMPILE_DEFINITIONS Z7_EXTERNAL_CODECS EXTERNAL_CODECS)
 
 include_directories(
 	${7ZIP_SOURCE_DIR}
@@ -295,33 +300,77 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/ZstdDec.c
 )
 
-if(7ZIP_USE_EXPORTS)
+if(7ZIP_USE_EXPORTS2)
 	list(APPEND 7ZIP_SOURCES
 		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArchiveExports.cpp
 		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DllExports2.cpp
 	)
 endif()
 
-if(7ZIP_USE_ASM)
+set(7ZIP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/7zip.dir")
+set(7ZIP_ASM_X86_DIRECTORY "${7ZIP_DIRECTORY}/_deps/7zip-src/Asm/x86")
+set(7ZIP_ASM_X86_OUTPUT "${7ZIP_ASM_X86_DIRECTORY}/LzmaDecOpt.asm.o")
+
+if(7ZIP_USE_ASMC)
 	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
-		find_program(7ZIP_NASM_EXECUTABLE nasm)
-		if(7ZIP_NASM_EXECUTABLE)
-			enable_language(ASM_NASM)
-			list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm)
-			list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
-			message(STATUS "7-Zip ASM enabled: ${7ZIP_NASM_EXECUTABLE}")
-		else()
-			message(
-				WARNING
-				"7ZIP_USE_ASM=ON but NASM was not found. "
-				"Building 7-Zip without x86 ASM."
-			)
+		find_program(7ZIP_ASMC_EXECUTABLE asmc)
+
+		if(NOT 7ZIP_ASMC_EXECUTABLE)
+			message(FATAL_ERROR "7ZIP_USE_ASMC=ON but ASMC was not found")
 		endif()
+
+		message(STATUS "7-Zip ASMC: ${7ZIP_ASMC_EXECUTABLE}")
+
+		# Do NOT use enable_language(ASM_ASMC) here.
+		# ASMC is not a standard CMake assembler language.
+
+		set(7ZIP_ASM_AFLAGS -nologo)
+
+		if(MINGW)
+			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+				list(APPEND 7ZIP_ASM_AFLAGS -win64)
+			else()
+				list(APPEND 7ZIP_ASM_AFLAGS -coff -DABI_CDECL)
+			endif()
+		else()
+			list(APPEND 7ZIP_ASM_AFLAGS -DABI_LINUX)
+			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+				list(APPEND 7ZIP_ASM_AFLAGS -elf64)
+			else()
+				list(APPEND 7ZIP_ASM_AFLAGS -elf -DABI_CDECL)
+			endif()
+		endif()
+
+		set(7ZIP_ASM_SOURCE ${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm)
+
+		add_custom_command(
+			OUTPUT ${7ZIP_ASM_X86_OUTPUT}
+			COMMAND ${CMAKE_COMMAND} -E make_directory ${7ZIP_ASM_X86_DIRECTORY}
+
+			COMMAND ${7ZIP_ASMC_EXECUTABLE} ${7ZIP_ASM_AFLAGS}
+					-Fo${7ZIP_ASM_X86_OUTPUT}
+					${7ZIP_ASM_SOURCE}
+
+			DEPENDS ${7ZIP_ASM_SOURCE}
+
+			VERBATIM
+			COMMENT "Assembling ${7ZIP_ASM_SOURCE} with ASMC"
+		)
+
+		add_custom_target(
+			7zip-asm
+			DEPENDS ${7ZIP_ASM_X86_OUTPUT}
+		)
+
+		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
 	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$")
 		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S)
 		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
-		message(STATUS "7-Zip ARM64 ASM enabled")
 	endif()
+endif()
+
+if(7ZIP_SET_PROPERTIES)
+	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7Z_SET_PROPERTIES)
 endif()
 
 if(MINGW)
@@ -362,54 +411,79 @@ if(NOT 7ZIP_DISABLE_RAR)
 	)
 endif()
 
-add_library(7zip OBJECT ${7ZIP_SOURCES})
-target_include_directories(
-	7zip
-	PRIVATE
-		${7ZIP_SOURCE_DIR}/CPP
-		${7ZIP_SOURCE_DIR}/C
-)
-target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
-
 if( UNIX )
-	target_compile_definitions(
-		7zip
-		PRIVATE
-			_LARGEFILE64_SOURCE _LARGEFILE_SOURCE _REENTRANT EXTERNAL_CODECS ENV_UNIX BREAK_HANDLER USE_WIN_FILE
+	list(APPEND 7ZIP_COMPILE_DEFINITIONS
+			_LARGEFILE64_SOURCE
+			_LARGEFILE_SOURCE
+			_REENTRANT
+			ENV_UNIX
+			BREAK_HANDLER
+			USE_WIN_FILE
+			_FILE_OFFSET_BITS=64
 	)
 endif()
 
-if(NOT MSVC)
-	target_compile_options(
+add_library(7zip OBJECT ${7ZIP_SOURCES})
+if(7ZIP_USE_ASMC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+	target_sources(
 		7zip
 		PRIVATE
-			-Wall
-			-Wextra
-			-D_REENTRANT
-			-D_FILE_OFFSET_BITS=64
-			-D_LARGEFILE_SOURCE
+			${7ZIP_ASM_X86_OUTPUT}
 	)
+
+	add_dependencies(7zip 7zip-asm)
+endif()
+
+target_include_directories(
+	7zip
+	PRIVATE
+		${7ZIP_SOURCE_DIR}
+		${7ZIP_SOURCE_DIR}/C
+		${7ZIP_SOURCE_DIR}/CPP
+)
+target_compile_definitions(7zip PRIVATE ${7ZIP_COMPILE_DEFINITIONS})
+
+
+if(NOT MSVC)
+	target_compile_options(7zip PRIVATE -Wall -Wextra)
+
+	if(7ZIP_DISABLE_ASAN)
+		message(STATUS "7-Zip ASan: DISABLED")
+	else()
+		message(STATUS "7-Zip ASan: ENABLED")
+		target_compile_options(
+			7zip PRIVATE
+				-fsanitize=address
+				-fno-omit-frame-pointer
+		)
+	endif()
+
+	if(7ZIP_DISABLE_UBSAN)
+		message(STATUS "7-Zip UBSan: DISABLED")
+	else()
+		message(STATUS "7-Zip UBSan: ENABLED")
+		target_compile_options(
+			7zip PRIVATE
+				-fsanitize=undefined
+				-fno-sanitize=alignment
+		)
+	endif()
 
 	set_target_properties(
 		7zip
 		PROPERTIES
 			POSITION_INDEPENDENT_CODE ON
 	)
-
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-	target_compile_options(
-		7zip
-		PRIVATE
-			-g
-	)
+	target_compile_options(7zip PRIVATE -g)
 else()
-	target_compile_definitions(
-		7zip
-		PRIVATE
-			NDEBUG
-	)
+	target_compile_definitions(7zip PRIVATE NDEBUG)
+endif()
+
+if(NOT MINGW)
+	target_compile_options(7zip PRIVATE -fPIC)
 endif()
 
 if(NOT MSVC)
