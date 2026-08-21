@@ -363,91 +363,69 @@ if( UNIX )
 endif()
 
 set(7ZIP_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/7zip.dir")
-set(7ZIP_ASM_X86_DIRECTORY "${7ZIP_DIRECTORY}/_deps/7zip-src/Asm/x86")
-set(7ZIP_ASM_X86_OUTPUT "${7ZIP_ASM_X86_DIRECTORY}/LzmaDecOpt.asm.o")
+set(7ZIP_ASM_OUTPUT_DIRECTORY "${7ZIP_DIRECTORY}/_deps/7zip-src/Asm/x86")
+set(7ZIP_ASM_SOURCE "${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm")
+set(7ZIP_ASM_OUTPUT "${7ZIP_ASM_OUTPUT_DIRECTORY}/LzmaDecOpt.asm.o")
+set(7ZIP_ASM_AFLAGS -nologo)
+
+if(MINGW)
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
+		list(APPEND 7ZIP_ASM_AFLAGS -win64)
+	else()
+		list(APPEND 7ZIP_ASM_AFLAGS -coff -DABI_CDECL)
+	endif()
+else()
+	list(APPEND 7ZIP_ASM_AFLAGS -DABI_LINUX)
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" OR ANDROID_ABI STREQUAL "x86_64")
+		list(APPEND 7ZIP_ASM_AFLAGS -elf64)
+	else()
+		list(APPEND 7ZIP_ASM_AFLAGS -elf -DABI_CDECL)
+	endif()
+endif()
 
 if(7ZIP_USE_ASMC)
-	# Android
-	if(ANDROID)
-		if(ANDROID_ABI STREQUAL "arm64-v8a")
-			message(STATUS"7-Zip Android ARM64 assembly: ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S")
-			list(APPEND 7ZIP_SOURCES "${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S")
-			list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
-		elseif(ANDROID_ABI STREQUAL "armeabi-v7a")
-			message(STATUS "7-Zip Android ARM32: using C implementation")
-		elseif(ANDROID_ABI STREQUAL "x86")
-			message(STATUS "7-Zip Android x86: using C implementation")
-		elseif(ANDROID_ABI STREQUAL "x86_64")
-			message(STATUS "7-Zip Android x86_64: using C implementation")
-		else()
-			message(WARNING
-				"Unknown Android ABI: ${ANDROID_ABI}; "
-				"disabling 7-Zip assembly"
-			)
-		endif()
-	# Non-Android
-	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+	if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$" OR ANDROID_ABI STREQUAL "x86_64")
 		find_program(7ZIP_ASMC_EXECUTABLE asmc)
 		if(NOT 7ZIP_ASMC_EXECUTABLE)
 			message(FATAL_ERROR "7ZIP_USE_ASMC=ON but ASMC was not found")
 		endif()
 
+		message(STATUS "7-Zip ASMC Flags: ${7ZIP_ASM_AFLAGS}")
 		message(STATUS "7-Zip ASMC: ${7ZIP_ASMC_EXECUTABLE}")
 
-		set(7ZIP_ASM_AFLAGS -nologo)
-
-		if(MINGW)
-			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-				list(APPEND 7ZIP_ASM_AFLAGS -win64)
-			else()
-				list(APPEND7ZIP_ASM_AFLAGS -coff -DABI_CDECL)
-			endif()
-		else()
-			list(APPEND 7ZIP_ASM_AFLAGS -DABI_LINUX)
-			if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64)$")
-				list(APPEND 7ZIP_ASM_AFLAGS -elf64)
-			else()
-				list(APPEND 7ZIP_ASM_AFLAGS -elf -DABI_CDECL)
-			endif()
-		endif()
-		set(7ZIP_ASM_SOURCE "${7ZIP_SOURCE_DIR}/Asm/x86/LzmaDecOpt.asm")
 		add_custom_command(
-			OUTPUT
-				"${7ZIP_ASM_X86_OUTPUT}"
-
+			OUTPUT "${7ZIP_ASM_OUTPUT}"
 			COMMAND
-				${CMAKE_COMMAND} -E make_directory
-				"${7ZIP_ASM_X86_DIRECTORY}"
-
+				"${CMAKE_COMMAND}"
+				-E make_directory
+				"${7ZIP_ASM_OUTPUT_DIRECTORY}"
 			COMMAND
 				"${7ZIP_ASMC_EXECUTABLE}"
 				${7ZIP_ASM_AFLAGS}
-				"-Fo${7ZIP_ASM_X86_OUTPUT}"
+				"-Fo${7ZIP_ASM_OUTPUT}"
 				"${7ZIP_ASM_SOURCE}"
-			DEPENDS "${7ZIP_ASM_SOURCE}"
+			DEPENDS "${7ZIP_ASM_SOURCE}" "${7ZIP_ASMC_EXECUTABLE}"
 			VERBATIM
-			COMMENT "Assembling ${7ZIP_ASM_SOURCE} with ASMC"
+			COMMENT "ASMC: assembling ${7ZIP_ASM_SOURCE}"
 		)
+		add_custom_target(7zip-asm-build DEPENDS "${7ZIP_ASM_OUTPUT}")
 		add_library(7zip-asm OBJECT IMPORTED GLOBAL)
 		set_property(
 			TARGET 7zip-asm
-			PROPERTY IMPORTED_OBJECTS
-				"${7ZIP_ASM_X86_OUTPUT}"
+			PROPERTY
+				IMPORTED_OBJECTS
+				"${7ZIP_ASM_OUTPUT}"
 		)
-		add_custom_target(7zip-asm-build DEPENDS "${7ZIP_ASM_X86_OUTPUT}")
 		add_dependencies(7zip-asm 7zip-asm-build)
-		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM)
+		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM Z7_LZMA_DEC_OPT)
+	elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64|arm64)$" OR ANDROID_ABI STREQUAL "arm64-v8a")
+		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/Asm/arm64/LzmaDecOpt.S ${7ZIP_SOURCE_DIR}/Asm/arm64/7zAsm.S)
+		list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7ZIP_ASM Z7_LZMA_DEC_OPT)
+		message(STATUS "7-Zip ARM64 ASM enabled")
 	endif()
 endif()
 
 add_library(7zip OBJECT ${7ZIP_SOURCES})
-if(7ZIP_USE_ASMC AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
-	target_sources(7zip PRIVATE
-		"${7ZIP_ASM_X86_OUTPUT}"
-	)
-
-	add_dependencies(7zip 7zip-asm-build)
-endif()
 
 target_include_directories(
 	7zip
