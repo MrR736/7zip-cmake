@@ -1,17 +1,41 @@
 cmake_minimum_required( VERSION 3.14 )
 
+set(7ZIP_VERSION "26.01" CACHE STRING "7-Zip Version")
+
 option(7ZIP_DISABLE_RAR "Disable RAR archive support in 7-Zip" OFF)
 option(7ZIP_USE_ASMC "Use ASMC in 7-Zip" ON)
 
-option(7ZIP_DISABLE_UBSAN "Disable UndefinedBehaviorSanitizer for 7-Zip" ON)
-option(7ZIP_DISABLE_ASAN "Enable AddressSanitizer for 7-Zip" ON)
-
+option(7ZIP_ST_MODE "Enable ST mode for 7-Zip" OFF)
 option(7ZIP_SET_PROPERTIES "Enable SetProperties for 7-Zip" ON)
 option(7ZIP_USE_EXPORTS2 "Use ArchiveExports.cpp/DllExports2.cpp in 7-Zip" ON)
 
 set(7ZIP_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
 
 set(7ZIP_COMPILE_DEFINITIONS Z7_EXTERNAL_CODECS EXTERNAL_CODECS)
+
+file(READ "${7ZIP_SOURCE_DIR}/C/7zVersion.h" _7ZIP_VERSION_HEADER)
+
+string(
+	REGEX MATCH
+	"#[ \t]*define[ \t]+MY_VERSION_NUMBERS[ \t]+\"([^\"]+)\""
+	_7ZIP_VERSION_MATCH
+	"${_7ZIP_VERSION_HEADER}"
+)
+
+if(NOT _7ZIP_VERSION_MATCH)
+	message(FATAL_ERROR "MY_VERSION_NUMBERS not found in 7zVersion.h")
+endif()
+
+if(NOT 7ZIP_VERSION STREQUAL "${CMAKE_MATCH_1}")
+	message(FATAL_ERROR "7ZIP_VERSION (${7ZIP_VERSION}) does not match MY_VERSION_NUMBERS (${CMAKE_MATCH_1}) in 7zVersion.h")
+endif()
+
+if(MINGW)
+	set(7ZIP_LIBRARYS_GUI ole32 gdi32 comctl32 comdlg32 shell32)
+	set(7ZIP_LIBRARYS oleaut32 uuid advapi32 user32 ${7ZIP_LIBRARYS_GUI} CACHE STRING "7-Zip system libraries")
+else()
+	set(7ZIP_LIBRARYS pthread ${CMAKE_DL_LIBS} CACHE STRING "7-Zip system libraries")
+endif()
 
 include_directories(
 	${7ZIP_SOURCE_DIR}
@@ -300,24 +324,11 @@ set(7ZIP_SOURCES
 	${7ZIP_SOURCE_DIR}/C/ZstdDec.c
 )
 
-if(7ZIP_USE_EXPORTS2)
-	list(APPEND 7ZIP_SOURCES
-		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArchiveExports.cpp
-		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DllExports2.cpp
-	)
-endif()
-
-
-if(7ZIP_SET_PROPERTIES)
-	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7Z_SET_PROPERTIES)
-endif()
-
-if(MINGW)
+if(7ZIP_ST_MODE)
 	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_ST)
-	list(APPEND 7ZIP_SOURCES
-		${7ZIP_SOURCE_DIR}/C/Threads.c
-		${7ZIP_SOURCE_DIR}/CPP/7zip/Bundles/Format7zF/resource.rc
-	)
+	if(MINGW)
+		list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/C/Threads.c)
+	endif()
 else()
 	list(APPEND 7ZIP_SOURCES
 		${7ZIP_SOURCE_DIR}/C/LzFindMt.c
@@ -330,6 +341,21 @@ else()
 		${7ZIP_SOURCE_DIR}/CPP/7zip/Common/ProgressMt.cpp
 		${7ZIP_SOURCE_DIR}/CPP/Common/MyWindows.cpp
 	)
+endif()
+
+if(7ZIP_SET_PROPERTIES)
+	list(APPEND 7ZIP_COMPILE_DEFINITIONS Z7_7Z_SET_PROPERTIES)
+endif()
+
+if(7ZIP_USE_EXPORTS2)
+	list(APPEND 7ZIP_SOURCES
+		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/ArchiveExports.cpp
+		${7ZIP_SOURCE_DIR}/CPP/7zip/Archive/DllExports2.cpp
+	)
+endif()
+
+if(MINGW)
+	list(APPEND 7ZIP_SOURCES ${7ZIP_SOURCE_DIR}/CPP/7zip/Bundles/Format7zF/resource.rc)
 endif()
 
 if(NOT 7ZIP_DISABLE_RAR)
@@ -395,15 +421,8 @@ if(7ZIP_USE_ASMC)
 
 		add_custom_command(
 			OUTPUT "${7ZIP_ASM_OUTPUT}"
-			COMMAND
-				"${CMAKE_COMMAND}"
-				-E make_directory
-				"${7ZIP_ASM_OUTPUT_DIRECTORY}"
-			COMMAND
-				"${7ZIP_ASMC_EXECUTABLE}"
-				${7ZIP_ASM_AFLAGS}
-				"-Fo${7ZIP_ASM_OUTPUT}"
-				"${7ZIP_ASM_SOURCE}"
+			COMMAND "${CMAKE_COMMAND}" -E make_directory "${7ZIP_ASM_OUTPUT_DIRECTORY}"
+			COMMAND "${7ZIP_ASMC_EXECUTABLE}" ${7ZIP_ASM_AFLAGS} "-Fo${7ZIP_ASM_OUTPUT}" "${7ZIP_ASM_SOURCE}"
 			DEPENDS "${7ZIP_ASM_SOURCE}" "${7ZIP_ASMC_EXECUTABLE}"
 			VERBATIM
 			COMMENT "ASMC: assembling ${7ZIP_ASM_SOURCE}"
@@ -439,28 +458,6 @@ target_compile_options(7zip PRIVATE -fPIC)
 
 if(NOT MSVC)
 	target_compile_options(7zip PRIVATE -Wall -Wextra)
-
-	if(7ZIP_DISABLE_ASAN)
-		message(STATUS "7-Zip ASan: DISABLED")
-	else()
-		message(STATUS "7-Zip ASan: ENABLED")
-		target_compile_options(
-			7zip PRIVATE
-				-fsanitize=address
-				-fno-omit-frame-pointer
-		)
-	endif()
-
-	if(7ZIP_DISABLE_UBSAN)
-		message(STATUS "7-Zip UBSan: DISABLED")
-	else()
-		message(STATUS "7-Zip UBSan: ENABLED")
-		target_compile_options(
-			7zip PRIVATE
-				-fsanitize=undefined
-				-fno-sanitize=alignment
-		)
-	endif()
 
 	set_target_properties(
 		7zip
